@@ -90,7 +90,7 @@ AS WITH arh AS (
                     a_1."time",
                     a_1.value
                    FROM arhive a_1
-                  WHERE EXTRACT(epoch FROM now() - a_1."time"::timestamp with time zone) < ((( SELECT DISTINCT minute FROM temp_table)) * 60)::numeric) q
+                  WHERE EXTRACT(epoch FROM now() - a_1."time"::timestamp with time zone) < ((( SELECT minute FROM temp_table limit 1)) * 60)::numeric) q
           WHERE q.rnk = 1
         ), evt AS (
          SELECT q.rnk,
