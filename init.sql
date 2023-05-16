@@ -59,3 +59,74 @@ end;$function$
 CREATE TRIGGER arhive_tr_ins
 BEFORE INSERT ON arhive
 FOR EACH ROW EXECUTE PROCEDURE check_state();
+
+
+CREATE OR REPLACE PROCEDURE public."5sec"()
+    LANGUAGE plpgsql
+AS $procedure$
+    BEGIN
+    while true loop
+	CALL "feel_param"();
+	commit;
+	perform pg_sleep(5);
+    end loop;
+    END;
+$procedure$
+;
+
+CREATE OR REPLACE VIEW public.newview
+AS SELECT arhive.id,
+    avg(arhive.value) AS avg,
+    date_trunc('minute'::text, arhive."time") AS time_m
+   FROM arhive
+  GROUP BY arhive.id, (date_trunc('minute'::text, arhive."time"))
+  ORDER BY (date_trunc('minute'::text, arhive."time")) DESC;
+
+
+CREATE TABLE public.temp_table (
+    "minute" integer NULL
+);
+
+INSERT INTO public.temp_table  ("minute") VALUES (5);
+
+CREATE OR REPLACE VIEW public.n_state
+AS WITH arh AS (
+         SELECT q.rnk,            q.id,
+            q."time",
+            q.value
+           FROM ( SELECT rank() OVER (PARTITION BY a_1.id ORDER BY a_1."time" DESC) AS rnk,
+                    a_1.id,
+                    a_1."time",
+                    a_1.value
+                   FROM arhive a_1
+                  WHERE EXTRACT(epoch FROM now() - a_1."time"::timestamp with time zone) < ((( SELECT DISTINCT minute FROM temp_table)) * 60)::numeric) q
+          WHERE q.rnk = 1
+        ), evt AS (
+         SELECT q.rnk,
+            q.id,
+            q."time",
+            q.value,
+            q.state
+           FROM ( SELECT rank() OVER (PARTITION BY e_1.id ORDER BY e_1."time" DESC) AS rnk,
+                    e_1.id,
+                    e_1."time",
+                    e_1.value,
+                    e_1.state
+                   FROM event e_1) q
+          WHERE q.rnk = 1
+        )
+ SELECT p.name,
+    a."time",
+    a.value,
+    e.state
+   FROM arh a
+     JOIN param p ON p.id = a.id
+     LEFT JOIN evt e ON e.id = a.id;
+
+CREATE OR REPLACE VIEW public.one_min
+AS SELECT arhive.id,
+    avg(arhive.value) AS avg,
+    date_trunc('minute'::text, arhive."time") AS time_m
+   FROM arhive
+  GROUP BY arhive.id, (date_trunc('minute'::text, arhive."time"))
+  ORDER BY (date_trunc('minute'::text, arhive."time")) DESC;
