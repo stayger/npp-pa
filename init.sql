@@ -61,7 +61,7 @@ BEFORE INSERT ON arhive
 FOR EACH ROW EXECUTE PROCEDURE check_state();
 
 
-CREATE OR REPLACE PROCEDURE public."5sec"()
+CREATE OR REPLACE PROCEDURE public."feel_on_5_sec"()
     LANGUAGE plpgsql
 AS $procedure$
     BEGIN
@@ -73,15 +73,6 @@ AS $procedure$
     END;
 $procedure$
 ;
-
-CREATE OR REPLACE VIEW public.newview
-AS SELECT arhive.id,
-    avg(arhive.value) AS avg,
-    date_trunc('minute'::text, arhive."time") AS time_m
-   FROM arhive
-  GROUP BY arhive.id, (date_trunc('minute'::text, arhive."time"))
-  ORDER BY (date_trunc('minute'::text, arhive."time")) DESC;
-
 
 CREATE TABLE public.temp_table (
     "minute" integer NULL
@@ -123,6 +114,7 @@ AS WITH arh AS (
      JOIN param p ON p.id = a.id
      LEFT JOIN evt e ON e.id = a.id;
 
+
 CREATE OR REPLACE VIEW public.one_min
 AS SELECT arhive.id,
     avg(arhive.value) AS avg,
@@ -130,3 +122,24 @@ AS SELECT arhive.id,
    FROM arhive
   GROUP BY arhive.id, (date_trunc('minute'::text, arhive."time"))
   ORDER BY (date_trunc('minute'::text, arhive."time")) DESC;
+
+
+CREATE OR REPLACE FUNCTION public.show_in_period(period_in_min integer)
+ RETURNS TABLE(name character varying, last_time timestamp without time zone, last_value integer, last_state integer)
+ LANGUAGE plpgsql
+AS $function$
+begin
+  return query
+    with arh as(
+    select q.id, q."time", q.value from  
+      (select rank() over (partition by id order by time desc) as rnk, a.id, a."time", a.value
+        from arhive a where extract (epoch from now()-"time") < period_in_min * 60
+      )q where q.rnk = 1
+    )
+  select param.name, arh."time", arh.value, 
+    (select state from event where event.id = arh.id order by time desc limit 1) as state
+  from arh
+  join param on param.id=arh.id;
+end
+$function$
+;
